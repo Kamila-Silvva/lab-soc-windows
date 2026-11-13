@@ -1,0 +1,62 @@
+title: Falha de senha da conta SocLab
+id: 133e8b0e-debb-44c1-8f95-f032b2e4d476
+
+logsource:
+  product: windows
+  service: security
+
+detection:
+  selection:
+    EventID: 4625
+    TargetUserName: SocLab
+    SubStatus: '0xc000006a'
+  condition: selection
+---
+title: Logon bem-sucedido da conta SocLab
+id: 92a11012-c878-4212-9894-ab4f9eeb13ff
+
+logsource:
+  product: windows
+  service: security
+
+detection:
+  selection:
+    EventID: 4624
+    TargetUserName: SocLab
+  condition: selection
+---
+title: Tres ou mais falhas de senha em 60 segundos
+id: a7c7cd78-c3ba-4648-ace5-b53566e769e4
+
+correlation:
+  type: event_count
+  rules:
+    -  133e8b0e-debb-44c1-8f95-f032b2e4d476
+  group-by:
+    - Computer
+    - TargetDomainName
+    - TargetUserName
+    - LogonType
+    - IpAddress
+  timespan: 60s
+  condition:
+    gte: 3
+---
+title: Falhas de senha seguidas de logon bem-sucedido
+id: 5c21a507-ff8e-4d0b-8ef0-fd6082d8cf6f
+status: experimental
+
+correlation:
+  type: temporal_ordered
+  rules:
+    - a7c7cd78-c3ba-4648-ace5-b53566e769e4
+    - 92a11012-c878-4212-9894-ab4f9eeb13ff
+  group-by:
+    - Computer
+    - TargetDomainName
+    - TargetUserName
+    - LogonType
+    - IpAddress
+  timespan: 60s
+
+level: medium
