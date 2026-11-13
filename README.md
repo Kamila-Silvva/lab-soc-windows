@@ -53,9 +53,9 @@ Essa validação cobre a estrutura do arquivo. A versão Sigma continua experime
 
 | Comportamento estudado | Referência |
 |---|---|
-| Tentativas repetidas com senha incorreta | [T1110 — Brute Force / T1110.001 — Password Guessing](https://attack.mitre.org/techniques/T1110/001/) |
-| Autenticação com a conta local de teste | [T1078 — Valid Accounts / T1078.003 — Local Accounts](https://attack.mitre.org/techniques/T1078/003/) |
-| Criação local de `cmd.exe`, observada no Sysmon | [T1059.003 — Windows Command Shell](https://attack.mitre.org/techniques/T1059/003/), na tática Execution |
+| Tentativas repetidas com senha incorreta | [T1110 - Brute Force / T1110.001 — Password Guessing](https://attack.mitre.org/techniques/T1110/001/) |
+| Autenticação com a conta local de teste | [T1078 - Valid Accounts / T1078.003 — Local Accounts](https://attack.mitre.org/techniques/T1078/003/) |
+| Criação local de `cmd.exe`, observada no Sysmon | [T1059.003 - Windows Command Shell](https://attack.mitre.org/techniques/T1059/003/), na tática Execution |
 
 O mapeamento relaciona os comportamentos do exercício às técnicas. As tentativas foram controladas e a senha correta era conhecida; os eventos não comprovam roubo de credenciais ou comprometimento. A execução de `cmd.exe` pertence à etapa local com `runas`.
 
