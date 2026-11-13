@@ -100,7 +100,7 @@ Esse acesso inicial gerou um evento 4624 com os seguintes dados:
 | Hora local | `2026-11-10 19:27:18` |
 | EventRecordID | `14175` |
 | Conta | `DESKTOP-EJJMRGB\SocLab` |
-| Tipo de logon | `3` — rede |
+| Tipo de logon | `3` - rede |
 | Origem | `192.168.56.1` |
 | Estação de trabalho | `KALI-KAH` |
 | Pacote de autenticação | `NTLM` |
