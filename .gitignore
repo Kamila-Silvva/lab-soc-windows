@@ -1,0 +1,6 @@
+# Evidencias brutas e arquivos locais ficam fora do controle de versao.
+*.evtx
+*.zip
+Evidencias/
+.env
+
