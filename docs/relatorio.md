@@ -1,4 +1,4 @@
-# Laboratório SOC — correlação de falhas de logon locais e via SMB
+# Laboratório SOC - correlação de falhas de logon locais e via SMB
 
 **Ambiente:** Kali Linux e Windows 11 Enterprise Evaluation no VirtualBox.  
 **Fontes:** Windows Security e Microsoft-Windows-Sysmon/Operational.  
@@ -78,7 +78,7 @@ Horários locais de Brasília, UTC−3, em 08/11/2026. Os XMLs registram os hor�
 | 16:49:44 | Security / 4624 | 14008 | Criação da sessão de `SocLab` |
 | 16:49:44 | Sysmon / 1 | 1506 | Criação de `cmd.exe` como `SocLab` |
 
-Da primeira falha ao sucesso transcorreram aproximadamente **13,93 segundos**, calculados pelos timestamps dos XMLs. O sucesso foi registrado às `16:49:44.043`, no horário local. O evento 4648 indica a tentativa com credenciais explícitas; a confirmação da sessão vem do 4624.
+Da primeira falha ao sucesso transcorreram aproximadamente **14 segundos**, calculados pelos timestamps dos XMLs. O sucesso foi registrado às `16:49:44.043`, no horário local. O evento 4648 indica a tentativa com credenciais explícitas; a confirmação da sessão vem do 4624.
 
 ### Associação entre sessão e processo
 
@@ -103,7 +103,7 @@ A integridade `Medium` é coerente com `Token Elevado: Não` no 4624. A associa�
 
 A coleta do controle foi delimitada entre **19:42:12.779 e 19:43:09.596**, no horário local de 08/11/2026. Foi conferida a presença de um 4625 seguido de um 4624 para `SocLab`. Com os mesmos critérios, a consulta retornou **uma falha e `Alerta = False`**.
 
-## Etapa SMB — 10/11/2026
+## Etapa SMB - 10/11/2026
 
 A conexão ao compartilhamento foi iniciada no Kali com:
 
@@ -294,9 +294,9 @@ O mapeamento abaixo relaciona o que foi estudado às técnicas do ATT&CK. Ele n�
 
 | Técnica | Relação com o exercício | Limite da interpretação |
 |---|---|---|
-| [T1110 — Brute Force / T1110.001 — Password Guessing](https://attack.mitre.org/techniques/T1110/001/) | Tentativas repetidas com senha incorreta, observadas nos eventos 4625 | As senhas incorretas foram inseridas manualmente para gerar os eventos; não houve descoberta da senha por força bruta |
-| [T1078 — Valid Accounts / T1078.003 — Local Accounts](https://attack.mitre.org/techniques/T1078/003/) | Uso da conta local `SocLab`, com sucesso registrado no 4624 | A senha correta já era conhecida. Um 4624 isolado não comprova abuso de credenciais |
-| [T1059.003 — Windows Command Shell](https://attack.mitre.org/techniques/T1059/003/) — Execution | Criação de `cmd.exe` registrada no Sysmon 1 e associada à sessão local | A observação pertence ao cenário com `runas`; não demonstra execução remota via SMB |
+| [T1110 - Brute Force / T1110.001 - Password Guessing](https://attack.mitre.org/techniques/T1110/001/) | Tentativas repetidas com senha incorreta, observadas nos eventos 4625 | As senhas incorretas foram inseridas manualmente para gerar os eventos; não houve descoberta da senha por força bruta |
+| [T1078 - Valid Accounts / T1078.003 - Local Accounts](https://attack.mitre.org/techniques/T1078/003/) | Uso da conta local `SocLab`, com sucesso registrado no 4624 | A senha correta já era conhecida. Um 4624 isolado não comprova abuso de credenciais |
+| [T1059.003 - Windows Command Shell](https://attack.mitre.org/techniques/T1059/003/) - Execution | Criação de `cmd.exe` registrada no Sysmon 1 e associada à sessão local | A observação pertence ao cenário com `runas`; não demonstra execução remota via SMB |
 
 ## Preservação das evidências
 
@@ -337,23 +337,18 @@ A etapa local mostrou também como usar o identificador de sessão para relacion
 
 ## Referências técnicas
 
-- [Microsoft — evento 4625](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4625)
-- [Microsoft — evento 4624](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4624)
-- [Microsoft — evento 4648](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4648)
-- [Microsoft Sysinternals — Sysmon](https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon)
-- [Microsoft — Get-WinEvent](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.diagnostics/get-winevent?view=powershell-5.1)
-- [Microsoft — políticas de execução do PowerShell](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1)
-- [Microsoft — wevtutil](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/wevtutil)
-- [Microsoft — Get-FileHash](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/get-filehash?view=powershell-5.1)
-- [Samba — smbclient](https://www.samba.org/samba/docs/current/man-html/smbclient.1.html)
-- [Oracle VirtualBox — redes virtuais](https://docs.oracle.com/en/virtualization/virtualbox/7.2/user/networkingdetails.html)
-- [Sigma — especificação das regras de correlação](https://sigmahq.io/sigma-specification/specification/sigma-correlation-rules-specification.html)
-- [pySigma — documentação](https://sigmahq-pysigma.readthedocs.io/en/latest/)
-- [python-evtx — leitor de arquivos EVTX](https://github.com/williballenthin/python-evtx)
-- [Elastic — upload de arquivos](https://www.elastic.co/docs/manage-data/ingest/upload-data-files)
-- [Elastic — sintaxe EQL](https://www.elastic.co/docs/reference/query-languages/eql/eql-syntax)
-- [Elastic — objetos salvos e exportação](https://www.elastic.co/docs/explore-analyze/find-and-organize/saved-objects)
-- [Wazuh — coleta de logs por sistema operacional](https://documentation.wazuh.com/current/user-manual/capabilities/log-data-collection/configuration.html)
-- [MITRE ATT&CK — T1110.001: Password Guessing](https://attack.mitre.org/techniques/T1110/001/)
-- [MITRE ATT&CK — T1078.003: Local Accounts](https://attack.mitre.org/techniques/T1078/003/)
-- [MITRE ATT&CK — T1059.003: Windows Command Shell](https://attack.mitre.org/techniques/T1059/003/)
+- [Microsoft - evento 4625](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4625)
+- [Microsoft - evento 4624](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4624)
+- [Microsoft - evento 4648](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4648)
+- [Microsoft Sysinternals - Sysmon](https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon)
+- [Microsoft - Get-WinEvent](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.diagnostics/get-winevent?view=powershell-5.1)
+- [Microsoft - Get-FileHash](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/get-filehash?view=powershell-5.1)
+- [Samba - smbclient](https://www.samba.org/samba/docs/current/man-html/smbclient.1.html)
+- [Sigma - especificação das regras de correlação](https://sigmahq.io/sigma-specification/specification/sigma-correlation-rules-specification.html)
+- [pySigma - documentação](https://sigmahq-pysigma.readthedocs.io/en/latest/)
+- [python-evtx - leitor de arquivos EVTX](https://github.com/williballenthin/python-evtx)
+- [Elastic - sintaxe EQL](https://www.elastic.co/docs/reference/query-languages/eql/eql-syntax)
+- [Elastic - objetos salvos e exportação](https://www.elastic.co/docs/explore-analyze/find-and-organize/saved-objects)
+- [MITRE ATT&CK - T1110.001: Password Guessing](https://attack.mitre.org/techniques/T1110/001/)
+- [MITRE ATT&CK - T1078.003: Local Accounts](https://attack.mitre.org/techniques/T1078/003/)
+- [MITRE ATT&CK - T1059.003: Windows Command Shell](https://attack.mitre.org/techniques/T1059/003/)
