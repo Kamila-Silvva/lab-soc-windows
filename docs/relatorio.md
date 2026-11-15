@@ -1,73 +1,42 @@
-# Laboratório SOC - correlação de falhas de logon locais e via SMB
+# Notas de investigação - logons locais e via SMB
 
-**Ambiente:** Kali Linux e Windows 11 Enterprise Evaluation no VirtualBox.  
-**Fontes:** Windows Security e Microsoft-Windows-Sysmon/Operational.  
-**Análise:** Visualizador de Eventos, PowerShell, arquivos EVTX, pySigma e Elastic Cloud.
+> Correlacionei falhas 4625 seguidas de sucesso 4624 em logon local (tipo 2) e SMB (tipo 3).  
+> Nos dois cenários, três falhas nos 60 segundos anteriores ao sucesso retornaram `Alerta = True`; o controle com uma falha retornou `False`.  
+> O script reproduziu os dois casos SMB; a EQL encontrou uma sequência do positivo e nenhuma do controle. O Sigma continua experimental.
 
-## Objetivo e resultados
+Fiz os testes em 08 e 10/11/2026 para acompanhar o caminho entre uma senha incorreta, o login bem-sucedido e a atividade da sessão. Usei a conta local `SocLab`, primeiro com `runas` e depois pelo SMB a partir do Kali.
 
-O exercício investigou falhas de senha seguidas de autenticação bem-sucedida em dois contextos: execução local com `runas` e acesso via SMB a partir do Kali. Em cada contexto, comparei três falhas seguidas de sucesso com um controle de uma falha seguida de sucesso.
+Minha hipótese era que a correlação encontraria três falhas antes do sucesso e deixaria de sinalizar o controle com apenas uma falha. Conferi os quatro casos por consultas interativas. Depois repeti os dois casos SMB com o script e levei seus eventos para o Elastic.
 
-| Caso | Tipo de logon | Origem | Falhas nos 60 s anteriores ao sucesso | Resultado da regra |
-|---|---:|---|---:|---|
-| Local — três falhas e sucesso | 2 | `::1` | 3 | `True` |
-| Local — controle com uma falha e sucesso | 2 | `::1` | 1 | `False` |
-| SMB — três falhas e sucesso | 3 | `192.168.56.1` | 3 | `True` |
-| SMB — controle com uma falha e sucesso | 3 | `192.168.56.1` | 1 | `False` |
+## Ambiente que usei
 
-Os quatro casos foram produzidos intencionalmente e conferidos por consultas interativas. O script reutilizável reproduziu os dois resultados SMB a partir dos EVTX exportados. Na etapa local, também relacionei a sessão de `SocLab` à criação de `cmd.exe` usando o Sysmon.
+O notebook tem 12 GB de RAM. A VM `Windows-SOC`, com Windows 11 Enterprise Evaluation, recebeu 6 GB e duas CPUs virtuais no VirtualBox. O Kali foi o hospedeiro e cliente SMB. No Windows, trabalhei com o log Security e o canal `Microsoft-Windows-Sysmon/Operational`.
 
-Depois, importei seis eventos SMB no Elastic Cloud. A consulta EQL retornou uma sequência do caso positivo e nenhuma do controle. O arquivo Sigma teve sua estrutura e suas referências verificadas pelo pySigma; sua execução como regra convertida não foi validada.
+Escolhi exportar os eventos para continuar a análise com a VM desligada. No [diário de decisões](diario-decisoes.md), registrei essa escolha, o bloqueio do script pelo PowerShell e o filtro que deixou o dashboard vazio.
 
-## Ambiente e decisão de arquitetura
+Na etapa SMB, usei a rede host-only `vboxnet0`:
 
-O notebook possui 12 GB de RAM e usa Kali Linux como sistema hospedeiro. A VM `Windows-SOC` recebeu 6 GB de RAM e duas CPUs virtuais. O computador Windows é `DESKTOP-EJJMRGB`, com a conta principal `Ka` e a conta local de teste `SocLab`.
+- Kali: `192.168.56.1/24`.
+- Windows: `192.168.56.101/24`, sem gateway nesse adaptador. O DHCP estava em `192.168.56.100`, com faixa de `192.168.56.101–254`.
+- Compartilhamento `LabSOC`: pasta `C:\LabSMB`, contendo `teste.txt`; leitura para `SocLab` no compartilhamento e leitura/execução no NTFS.
 
-Para trabalhar dentro desse limite de memória, separei a geração dos eventos da análise posterior: exportei recortes EVTX, preservei os arquivos e passei a analisá-los offline. Assim, a VM não precisava permanecer ligada durante a leitura dos arquivos no Kali e o uso do Elastic Cloud pelo navegador.
+Criei a regra `LabSOC-SMB-Kali` para permitir TCP/445 no IP da VM, com origem em `192.168.56.1`. Registrei a configuração dessa regra; não fiz uma auditoria completa do firewall. O computador Windows foi identificado como `DESKTOP-EJJMRGB`, e a conta principal era `Ka`.
 
-O PowerShell foi usado para consultar os logs e repetir a correlação no Windows. No Kali, Python foi usado para ler os EVTX SMB e gerar o NDJSON importado manualmente no Elastic. O dashboard e a consulta EQL trabalham com esse conjunto histórico.
+## Critério usado na análise
 
-Uma evolução para monitoramento contínuo seria coletar os canais Windows com um agente, como o Wazuh, e encaminhá-los à plataforma central. Essa arquitetura precisaria de regras, retenção e notificações próprias. A coleta contínua por agente não fez parte deste exercício.
+Para cada sucesso **4624**, contei falhas **4625** com `SubStatus = 0xc000006a` no intervalo **[sucesso − 60 segundos, sucesso)**. Exigi os mesmos valores de `Computer`, `TargetDomainName`, `TargetUserName`, `LogonType` e `IpAddress`.
 
-### Rede e compartilhamento
+Com três ou mais falhas, o PowerShell retorna `Alerta = True`. Escolhi esse limite para o exercício e usei uma falha seguida de sucesso como controle.
 
-Na etapa SMB, o adaptador da VM foi conectado à rede host-only `vboxnet0`:
-
-| Componente | Endereço e função |
-|---|---|
-| Kali / `vboxnet0` | `192.168.56.1/24`; cliente SMB |
-| Windows-SOC | `192.168.56.101/24`; servidor SMB, sem gateway padrão nesse adaptador |
-| DHCP host-only | Servidor `192.168.56.100`, faixa `192.168.56.101–254` |
-| Compartilhamento | `LabSOC`, diretório `C:\LabSMB`, arquivo `teste.txt` |
-
-O compartilhamento concedeu leitura a `SocLab`, com permissão NTFS de leitura e execução. A regra de firewall `LabSOC-SMB-Kali` foi criada para permitir TCP/445 no endereço `192.168.56.101`, tendo `192.168.56.1` como origem. Essa descrição se refere à regra criada, não a uma auditoria de todas as regras do firewall. Os IPs são os observados durante o teste; a VM recebeu seu endereço por DHCP.
-
-## Regra de correlação
-
-Para cada sucesso **4624**, a consulta conta falhas **4625** com `SubStatus = 0xc000006a` — senha incorreta — no intervalo **[sucesso − 60 segundos, sucesso)**. A falha precisa corresponder ao sucesso nos campos:
-
-- `Computer`: computador.
-- `TargetDomainName` e `TargetUserName`: domínio e usuário.
-- `LogonType`: tipo de logon.
-- `IpAddress`: endereço de origem.
-
-O resultado é `Alerta = True` quando a contagem é maior ou igual a três. Esse é o critério aplicado nas consultas PowerShell e no script.
-
-Os 60 segundos e as três falhas foram escolhidos para tornar o teste reproduzível. Não são apresentados como valores recomendados para qualquer ambiente.
-
-## Etapa local — 08/11/2026
-
-A conta `Ka` solicitou a execução de `cmd.exe` com as credenciais de `SocLab`:
+## 08/11 - login local e criação de processo
+Executei, a partir da conta `Ka`:
 
 ```text
 runas /user:DESKTOP-EJJMRGB\SocLab cmd.exe
 ```
+Errei a senha três vezes de propósito e depois informei a correta. Nas falhas, observei logon tipo `2` — interativo —, origem `::1`, status `0xC000006D` e substatus `0xC000006A`.
 
-No caso com três falhas, os eventos registraram tipo de logon `2` — interativo —, origem `::1` — loopback —, substatus `0xC000006A` e status geral `0xC000006D`.
-
-### Linha do tempo
-
-Horários locais de Brasília, UTC−3, em 08/11/2026. Os XMLs registram os horários em UTC.
+A sequência abaixo usa horário de Brasília, UTC−3. Os horários dos XMLs estão em UTC.
 
 | Hora local | Fonte / evento | EventRecordID | Observação |
 |---|---|---:|---|
@@ -78,11 +47,9 @@ Horários locais de Brasília, UTC−3, em 08/11/2026. Os XMLs registram os hor�
 | 16:49:44 | Security / 4624 | 14008 | Criação da sessão de `SocLab` |
 | 16:49:44 | Sysmon / 1 | 1506 | Criação de `cmd.exe` como `SocLab` |
 
-Da primeira falha ao sucesso transcorreram aproximadamente **14 segundos**, calculados pelos timestamps dos XMLs. O sucesso foi registrado às `16:49:44.043`, no horário local. O evento 4648 indica a tentativa com credenciais explícitas; a confirmação da sessão vem do 4624.
+Pelos timestamps completos, passaram aproximadamente **13,93 segundos** entre a primeira falha e o sucesso, registrado às `16:49:44.043` no horário local. Usei o 4624 para confirmar a criação da sessão; o 4648 registra a tentativa com credenciais explícitas.
 
-### Associação entre sessão e processo
-
-O Security 4624 contém `TargetLogonId = 0x14bfc2d`. O Sysmon 1 apresenta o mesmo valor em `LogonId`, no mesmo computador e para a mesma conta.
+Para ligar o login ao processo, comparei `TargetLogonId` do 4624 com `LogonId` do Sysmon 1: ambos eram `0x14bfc2d`, no mesmo host e para `SocLab`.
 
 | Campo do Sysmon | Valor observado |
 |---|---|
@@ -97,41 +64,27 @@ O Security 4624 contém `TargetLogonId = 0x14bfc2d`. O Sysmon 1 apresenta o mesm
 | Linha de comando do pai | `runas.exe /user:DESKTOP-EJJMRGB\SocLab cmd.exe` |
 | Integridade | `Medium` |
 
-A integridade `Medium` é coerente com `Token Elevado: Não` no 4624. A associação considera computador, conta, identificador de sessão e proximidade temporal. O identificador de sessão precisa ser interpretado no contexto do host e do período analisado.
+Conferi também o horário e o processo pai. A integridade `Medium` era coerente com `Token Elevado: Não` no 4624. Essa foi a associação de processo observada no teste local.
 
-### Controle local
+No controle, delimitei a coleta entre **19:42:12.779 e 19:43:09.596**, no mesmo dia e fuso. Confirmei um 4625 antes de um 4624. A consulta retornou **uma falha e `Alerta = False`**.
 
-A coleta do controle foi delimitada entre **19:42:12.779 e 19:43:09.596**, no horário local de 08/11/2026. Foi conferida a presença de um 4625 seguido de um 4624 para `SocLab`. Com os mesmos critérios, a consulta retornou **uma falha e `Alerta = False`**.
+## 10/11 - acesso ao compartilhamento pelo Kali
 
-## Etapa SMB - 10/11/2026
-
-A conexão ao compartilhamento foi iniciada no Kali com:
+Usei o comando abaixo e informei a senha no prompt:
 
 ```bash
 smbclient //192.168.56.101/LabSOC -p 445 -W DESKTOP-EJJMRGB -U SocLab
 ```
 
-A senha foi informada no prompt interativo. Uma conexão inicial com a senha correta permitiu listar `teste.txt` com `ls` e encerrar com `quit`.
+Na conexão inicial com a senha correta, consegui listar `teste.txt` com `ls` e sair com `quit`. O 4624 correspondente foi o registro `14175`, às `19:27:18` locais: conta `SocLab`, logon tipo `3`, origem `192.168.56.1`, estação `KALI-KAH`, autenticação `NTLM`/`NTLM V2` e sessão `0x271012`.
 
-### Acesso inicial
+Usei esse acesso como referência e fiz as próximas tentativas separadamente. Depois de três senhas incorretas e uma correta, imprimi o resultado da consulta interativa:
 
-| Campo do Security 4624 | Valor observado |
-|---|---|
-| Hora local | `2026-11-10 19:27:18` |
-| EventRecordID | `14175` |
-| Conta | `DESKTOP-EJJMRGB\SocLab` |
-| Tipo de logon | `3` — rede |
-| Origem | `192.168.56.1` |
-| Estação de trabalho | `KALI-KAH` |
-| Pacote de autenticação | `NTLM` |
-| Nome do pacote NTLM | `NTLM V2` |
-| TargetLogonId | `0x271012` |
+```powershell
+$resultadoSMB | Format-List
+```
 
-O tipo 3, o endereço de origem e o uso do cliente SMB sustentam a identificação desse acesso pela rede. Esse evento foi usado como referência para separar as tentativas seguintes.
-
-### Três falhas e sucesso
-
-Foram feitas três tentativas com senha incorreta e, depois, uma com a senha correta. A consulta ao Security retornou:
+Saída registrada:
 
 ```text
 Conta     : DESKTOP-EJJMRGB\SocLab
@@ -143,109 +96,59 @@ Falhas60s : 3
 Alerta    : True
 ```
 
-A leitura posterior do EVTX no Kali confirmou a sequência abaixo. Todos os eventos têm conta `SocLab`, tipo de logon `3` e origem `192.168.56.1`.
+Em outra execução, fiz apenas uma tentativa incorreta antes da correta. O resultado foi `Falhas60s = 1` e `Alerta = False`. Salvei cada caso em sua própria pasta.
 
-| Horário UTC em 10/11/2026 | Evento | EventRecordID | SubStatus |
-|---|---:|---:|---|
-| 22:32:03.303637 | 4625 | 14182 | `0xc000006a` |
-| 22:32:08.465334 | 4625 | 14183 | `0xc000006a` |
-| 22:32:14.257408 | 4625 | 14184 | `0xc000006a` |
-| 22:32:22.840467 | 4624 | 14185 | Não presente |
+A leitura dos EVTX no Kali confirmou estes seis registros. Todos pertencem a `SocLab`, com logon tipo `3` e origem `192.168.56.1`:
 
-O intervalo entre a primeira falha e o sucesso foi de **19,536830 segundos**, dentro da janela do teste.
+| Caso | Horário UTC em 10/11/2026 | Evento | EventRecordID |
+|---|---|---:|---:|
+| Três falhas | 22:32:03.303637 | 4625 | 14182 |
+| Três falhas | 22:32:08.465334 | 4625 | 14183 |
+| Três falhas | 22:32:14.257408 | 4625 | 14184 |
+| Sucesso | 22:32:22.840467 | 4624 | 14185 |
+| Controle: falha | 22:46:53.591682 | 4625 | 14192 |
+| Controle: sucesso | 22:46:59.615614 | 4624 | 14193 |
 
-### Controle SMB
+As quatro falhas têm `SubStatus = 0xc000006a`. No caso positivo, a primeira falha precede o sucesso em **19,536830 segundos**. O acesso SMB confirmou autenticação pela rede; a execução de `cmd.exe` pertence à etapa local com `runas`.
 
-Em uma execução separada, foi feita uma tentativa com senha incorreta seguida de uma com a senha correta.
+### Repetindo a leitura com o script
 
-| Horário UTC em 10/11/2026 | Evento | EventRecordID | SubStatus |
-|---|---:|---:|---|
-| 22:46:53.591682 | 4625 | 14192 | `0xc000006a` |
-| 22:46:59.615614 | 4624 | 14193 | Não presente |
-
-A regra retornou **`Falhas60s = 1` e `Alerta = False`**. Os eventos e o resultado foram exportados separadamente do caso positivo.
-
-Esta etapa trata de autenticação pela rede e acesso ao compartilhamento. O logon SMB não demonstra execução remota de `cmd.exe`; a associação com esse processo foi feita na etapa local com `runas`.
-
-## Repetição com o script PowerShell
-
-O [analisar-logons.ps1](../scripts/analisar-logons.ps1) lê o EVTX, interpreta os campos XML pelo nome e aplica a regra a cada sucesso 4624 da conta indicada. A conta padrão é `SocLab`. A saída inclui host, conta, horários local e UTC, IDs dos registros, origem, tipo de logon, sessão, contagem de falhas e resultado.
-
-O script usa `Get-WinEvent` e requer PowerShell no Windows, versão 5.1 ou posterior. Ele lê os eventos Security 4624/4625 sem alterar o EVTX ou exportar arquivos automaticamente. A associação com Sysmon foi feita separadamente.
-
-Com o script salvo na VM em `C:\Users\Ka\Lab`, executei:
+O [analisar-logons.ps1](../scripts/analisar-logons.ps1) lê os campos XML pelo nome e retorna um objeto por sucesso da conta indicada, incluindo os IDs dos registros usados na correlação. Na VM, executei:
 
 ```powershell
 Set-Location 'C:\Users\Ka\Lab'
-
 .\analisar-logons.ps1 -ArquivoEVTX '.\Evidencias\03-smb\Security-SMB.evtx' | Format-List
-
 .\analisar-logons.ps1 -ArquivoEVTX '.\Evidencias\04-smb-controle\Security-SMB-controle.evtx' | Format-List
 ```
 
-| Arquivo | Falhas60s | Alerta |
-|---|---:|---|
-| `Security-SMB.evtx` | 3 | `True` |
-| `Security-SMB-controle.evtx` | 1 | `False` |
+Obtive novamente três falhas/`True` no primeiro arquivo e uma falha/`False` no controle. O script requer Windows com PowerShell 5.1 ou posterior, usa `Get-WinEvent` e apenas lê os EVTX. A conta padrão é `SocLab`; outra pode ser indicada com `-Usuario`.
 
-A política de execução bloqueou inicialmente a abertura do script. Para executar o arquivo criado localmente, usei o ajuste abaixo apenas na sessão PowerShell em uso:
+Na primeira tentativa, a política de execução bloqueou o `.ps1`. O ajuste limitado à sessão está registrado no [diário](diario-decisoes.md#2-o-powershell-bloqueou-a-execução-do-script).
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force
-```
+## Sigma e Elastic
 
-Os dois comandos foram executados após esse ajuste. A validação do script reutilizável abrange os dois EVTX SMB; os resultados locais foram obtidos pelas consultas interativas anteriores.
-
-## Proposta em Sigma
-
-O arquivo [detect_brute_force.yml](../rules/detect_brute_force.yml) possui quatro documentos YAML:
-
-| Bloco | Função |
-|---|---|
-| Falha de senha | Selecionar 4625 de `SocLab` com `SubStatus = 0xc000006a` |
-| Logon bem-sucedido | Selecionar 4624 de `SocLab` |
-| `event_count` | Contar três ou mais falhas em 60 segundos, agrupadas pelos campos da regra |
-| `temporal_ordered` | Relacionar a contagem de falhas ao sucesso posterior |
-
-O pySigma carregou os quatro blocos e resolveu as referências por UUID:
+Escrevi o [arquivo Sigma](../rules/detect_brute_force.yml) em quatro blocos: seleção das falhas, seleção dos sucessos, contagem com `event_count` e sequência com `temporal_ordered`. Ao carregar o YAML e resolver as referências no pySigma, obtive:
 
 ```text
 OK: 4 blocos carregados.
 Referencias entre as regras resolvidas.
 ```
 
-Essa verificação confirma a leitura da estrutura e a resolução das referências. Não demonstra execução da correlação em um SIEM. O suporte depende do backend de conversão e dos recursos da plataforma de destino, como descreve a [especificação Sigma](https://sigmahq.io/sigma-specification/specification/sigma-correlation-rules-specification.html).
+Para consultar os dados no Elastic, escrevi a EQL separadamente. No Kali, li os dois EVTX SMB com `python-evtx` e processei os XMLs com `defusedxml`. Selecionei os eventos 4624/4625 de `SocLab` e gerei `logons-smb.ndjson`.
 
-A proposta continua experimental. Há uma janela de 60 segundos na contagem e outra na correlação temporal; esse encadeamento não garante que todas as falhas estejam nos 60 segundos anteriores ao sucesso, como exige o PowerShell. A equivalência dessa versão precisa ser testada no backend escolhido. A consulta EQL a seguir foi escrita separadamente e não valida a conversão do arquivo Sigma.
-
-## Análise offline no Elastic Cloud
-
-### Preparação e ingestão
-
-No Kali, os dois EVTX SMB foram lidos com `python-evtx`, e os XMLs foram processados com `defusedxml`. Foram selecionados os eventos 4624/4625 de `SocLab`, gerando o arquivo `logons-smb.ndjson` com seis documentos.
-
-Os campos mantiveram os nomes do Windows, como `EventID`, `Computer`, `TargetUserName`, `LogonType` e `IpAddress`. O horário UTC foi incluído em `@timestamp`. Cada documento também recebeu `lab.caso`, `lab.arquivo` e `lab.evtx_sha256` para identificar o cenário e o EVTX de origem. Não foi feita uma normalização completa para ECS.
-
-O NDJSON foi importado manualmente no índice `lab-soc-smb`, com uma data view de mesmo nome. A importação usou o arquivo convertido, e não o EVTX binário. O conjunto contém quatro eventos de `smb-positivo` e dois de `smb-controle`.
+Mantive os nomes dos campos Windows e acrescentei `@timestamp` em UTC, `lab.caso`, `lab.arquivo` e `lab.evtx_sha256`. A importação manual criou o índice e a data view `lab-soc-smb`, com quatro documentos de `smb-positivo` e dois de `smb-controle`.
 
 ### Dashboard
 
-O dashboard **SOC - Autenticações SMB** reúne:
+Montei um gráfico de contagem por minuto e uma tabela em ordem cronológica. O período da imagem é de **19:31 a 19:49 de 10/11/2026**, em Brasília.
 
-- Um gráfico de barras empilhadas com contagem por minuto, separando falhas 4625 de sucessos 4624.
-- Uma tabela com os seis eventos em ordem cronológica, exibindo horário, evento, conta, origem, tipo de logon, cenário e substatus.
+![Falhas e sucessos SMB no Elastic, com os seis eventos do teste e do controle](dashboard-elastic.png)
 
-![Dashboard de autenticações SMB no Elastic](dashboard-elastic.png)
-
-Na imagem, o período selecionado é de **19:31 a 19:49 de 10/11/2026**, em UTC−3. Os dados de origem usam UTC. O primeiro grupo contém três falhas e um sucesso; o segundo, uma falha e um sucesso.
-
-O gráfico apresenta contagens por minuto. A verificação da ordem e da janela de correlação foi feita pelas consultas e pelos timestamps dos eventos.
-
-A configuração do dashboard foi exportada para a pasta [dashboards](../dashboards/). Essa exportação permite guardar os objetos do Kibana; ela não substitui os dados do índice.
+O primeiro grupo mostra três falhas e um sucesso; o segundo, uma falha e um sucesso. Guardei a configuração na pasta [dashboards](../dashboards/). Os dados do índice precisam ser importados separadamente ao reconstruir a visualização.
 
 ### Consulta EQL e resultado
 
-No Console do Kibana, executei a consulta abaixo sobre `lab-soc-smb`. O bloco usa a sintaxe do Console, incluindo a string de múltiplas linhas delimitada por três aspas.
+Executei este bloco no Console do Kibana:
 
 ```http
 GET lab-soc-smb/_eql/search
@@ -271,36 +174,15 @@ GET lab-soc-smb/_eql/search
 }
 ```
 
-`sequence by` exige os mesmos valores nos campos de agrupamento. `with runs=3` repete o critério de falha três vezes, e `maxspan=60s` limita a duração da sequência desde seu primeiro evento. O último critério procura o sucesso. O uso de `any` permite consultar esses documentos sem um campo `event.category`.
+`sequence by` agrupa os eventos pelos campos indicados, `with runs=3` repete o critério de falha e `maxspan=60s` limita a duração desde o primeiro evento da sequência. Usei `any` porque os documentos não têm `event.category`.
 
-A resposta retornou `hits.total.value = 1`, com `is_partial = false`, `is_running = false` e `timed_out = false`. A sequência contém:
+A resposta trouxe **`hits.total.value = 1`**, com `is_partial`, `is_running` e `timed_out` iguais a `false`. Os registros retornados foram `14182`, `14183`, `14184` e `14185`: as três falhas e o sucesso do caso positivo.
 
-| Posição | Evento | EventRecordID | Horário UTC em 10/11/2026 |
-|---:|---:|---:|---|
-| 1 | 4625 | 14182 | 22:32:03.303637 |
-| 2 | 4625 | 14183 | 22:32:08.465334 |
-| 3 | 4625 | 14184 | 22:32:14.257408 |
-| 4 | 4624 | 14185 | 22:32:22.840467 |
+Conferi as chaves: computador e domínio `DESKTOP-EJJMRGB`, usuário `SocLab`, logon tipo `3` e origem `192.168.56.1`. Os eventos do controle estavam no mesmo índice e não formaram uma sequência correspondente.
 
-As chaves de agrupamento foram computador e domínio `DESKTOP-EJJMRGB`, usuário `SocLab`, tipo de logon `3` e origem `192.168.56.1`. Todos os documentos retornados pertencem a `smb-positivo`. Os dois documentos do controle estavam no índice, mas não formaram uma sequência correspondente.
+## Evidências preservadas
 
-O resultado confirma o comportamento esperado nesses dois conjuntos SMB. Foi uma consulta manual sobre dados históricos: não houve criação de uma regra agendada no Elastic Security nem geração de uma notificação automática.
-
-A consulta EQL retorna sequências, enquanto o PowerShell conta as falhas anteriores a cada sucesso. Os testes realizados não estabelecem equivalência para todos os casos, como eventos com timestamps iguais, ocorrências exatamente no limite de 60 segundos ou vários sucessos próximos.
-
-## Mapeamento MITRE ATT&CK
-
-O mapeamento abaixo relaciona o que foi estudado às técnicas do ATT&CK. Ele não classifica os eventos do laboratório como um ataque real.
-
-| Técnica | Relação com o exercício | Limite da interpretação |
-|---|---|---|
-| [T1110 - Brute Force / T1110.001 - Password Guessing](https://attack.mitre.org/techniques/T1110/001/) | Tentativas repetidas com senha incorreta, observadas nos eventos 4625 | As senhas incorretas foram inseridas manualmente para gerar os eventos; não houve descoberta da senha por força bruta |
-| [T1078 - Valid Accounts / T1078.003 - Local Accounts](https://attack.mitre.org/techniques/T1078/003/) | Uso da conta local `SocLab`, com sucesso registrado no 4624 | A senha correta já era conhecida. Um 4624 isolado não comprova abuso de credenciais |
-| [T1059.003 - Windows Command Shell](https://attack.mitre.org/techniques/T1059/003/) - Execution | Criação de `cmd.exe` registrada no Sysmon 1 e associada à sessão local | A observação pertence ao cenário com `runas`; não demonstra execução remota via SMB |
-
-## Preservação das evidências
-
-Diretório original na VM: `C:\Users\Ka\Lab\Evidencias`.
+Organizei os arquivos na VM em `C:\Users\Ka\Lab\Evidencias`:
 
 | Pasta | Arquivos |
 |---|---|
@@ -309,31 +191,39 @@ Diretório original na VM: `C:\Users\Ka\Lab\Evidencias`.
 | `03-smb` | `Security-SMB.evtx`, `resultado-smb.csv`, `hashes-evidencias.csv` |
 | `04-smb-controle` | `Security-SMB-controle.evtx`, `resultado-controle-smb.csv`, `hashes-evidencias.csv` |
 
-Os manifestos SHA-256 foram calculados após a exportação. Nas pastas SMB, cada manifesto cobre o EVTX e o CSV correspondente. Os EVTX SMB são recortes do primeiro registro selecionado até o sucesso, inclusive, preservando também os outros eventos Security existentes nesse intervalo.
+Os recortes SMB vão do primeiro registro selecionado até o sucesso, inclusive, com os outros eventos Security presentes nesse intervalo. Calculei os manifestos SHA-256 após a exportação; nas pastas SMB eles cobrem o EVTX e o CSV correspondente.
 
-As evidências e a cópia do script usada na VM foram reunidas em `evidencias-soc-final.zip`. No Kali, o pacote foi salvo em `~/Documentos/evidencias-soc/`. Seu SHA-256 coincidiu com o valor calculado no Windows:
+Reuni as evidências e a cópia do script usada na VM em `evidencias-soc-final.zip`. No Kali, guardei o pacote em `~/Documentos/evidencias-soc/`. O SHA-256 coincidiu com o valor registrado no Windows:
 
 ```text
 20cbc0fff6b88e625e50b94c8b51e9325516c618b523d081c9d2259aab07f29d
 ```
 
-A verificação com `unzip -t` terminou sem erros nos 15 arquivos do pacote. O hash permite comparar o arquivo com a referência registrada; não comprova sozinho a autenticidade da coleta. Os EVTX e demais arquivos brutos permanecem no acervo local, fora do repositório público.
+O `unzip -t` verificou os 15 arquivos sem erros. Os arquivos brutos ficaram no acervo local. O hash serve para comparar a cópia com a referência registrada após a exportação.
 
-## Limitações e próximos testes
+## Relação com MITRE ATT&CK
 
-O laboratório cobre quatro casos controlados, uma conta e um computador Windows. Os resultados não medem taxas de falsos positivos ou negativos em produção. O controle demonstra apenas que uma falha não atinge o limite escolhido.
+Usei o ATT&CK para relacionar os comportamentos estudados às técnicas:
 
-A regra exige sucesso posterior e depende dos eventos disponíveis. Uma sequência só de falhas, um recorte incompleto ou tentativas distribuídas entre contas e origens pode não produzir o resultado procurado.
+- **T1110 / T1110.001 - Brute Force / Password Guessing:** tentativas repetidas com senhas incorretas.
+- **T1078 / T1078.003 - Valid Accounts / Local Accounts:** uso da conta local `SocLab` no sucesso.
+- **T1059.003 - Windows Command Shell, Execution:** criação local de `cmd.exe`, registrada no Sysmon.
 
-Tentativas espaçadas ao longo de horas, como em um ataque *low-and-slow*, também podem escapar da janela de 60 segundos. Para outro ambiente, seria necessário conhecer o comportamento habitual de usuários e serviços, avaliar erros legítimos de senha e testar diferentes janelas e limites. Aumentar a janela sem avaliar esse contexto pode trazer mais correspondências legítimas.
+O alvo desta regra é o padrão de tentativas de senha associado a **T1110.001**, dentro de T1110. T1078 e T1059.003 ajudam a contextualizar o acesso e a execução local, mas não são alvos de detecções específicas neste projeto.
 
-A validação do Sigma ficou na estrutura e nas referências. A consulta EQL foi executada nos dois conjuntos SMB, sem testar todas as diferenças possíveis em relação ao script. O Elastic recebeu dados históricos por upload manual; não houve coleta contínua, bloqueio automático ou regra agendada.
+Todos os acessos foram feitos no laboratório com credenciais conhecidas. Esse mapeamento descreve os comportamentos; não demonstra obtenção de senha por força bruta ou abuso real da conta.
 
-## O que ficou demonstrado
+## O que ficou pendente
 
-As consultas distinguiram o caso com três falhas do controle com uma falha nos dois tipos de logon. O script permitiu repetir a análise SMB sobre os EVTX preservados, e a consulta EQL encontrou a sequência esperada nos eventos importados no Elastic.
+**Minha prioridade é repetir a análise com um conjunto maior de logons legítimos da conta de teste, intercalando os cenários controlados.** Essa mistura aproxima o exercício de uma rotina de autenticação e permite avaliar correspondências benignas antes de ajustar o limiar e automatizar a detecção.
 
-A etapa local mostrou também como usar o identificador de sessão para relacionar autenticação e criação de processo. Em uma investigação real, essa sequência seria um ponto de partida para conferir origem, conta, horários e atividade posterior antes de concluir que houve comprometimento.
+A validação cobre quatro casos, uma conta e um host. Para ampliar o teste, preciso avaliar tentativas mais espaçadas, contas e origens diferentes e recortes incompletos. A regra depende de um sucesso posterior; os 60 segundos não cobrem todo padrão de tentativa de senha.
+
+No Sigma, validei a estrutura e as referências. As duas correlações de 60 segundos encadeadas ainda precisam ser testadas no backend escolhido: elas não garantem a janela única anterior ao sucesso usada pelo script. Por isso, mantenho essa versão experimental.
+
+A EQL encontrou o resultado esperado nos dois conjuntos SMB. Ainda faltam testes de limite — timestamps iguais, ocorrências exatamente em 60 segundos e vários sucessos próximos — antes de afirmar equivalência com o PowerShell.
+
+O Elastic recebeu dados históricos por upload manual. Para uma próxima etapa, posso estudar coleta contínua e regras agendadas. A triagem que proponho para uma sequência correspondente está no [runbook](runbook-triagem.md), com critérios para escalar, encerrar como atividade autorizada ou manter em análise.
 
 ## Referências técnicas
 
