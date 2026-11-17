@@ -223,7 +223,7 @@ No Sigma, validei a estrutura e as referências. As duas correlações de 60 seg
 
 A EQL encontrou o resultado esperado nos dois conjuntos SMB. Ainda faltam testes de limite — timestamps iguais, ocorrências exatamente em 60 segundos e vários sucessos próximos — antes de afirmar equivalência com o PowerShell.
 
-O Elastic recebeu dados históricos por upload manual. Para uma próxima etapa, posso estudar coleta contínua e regras agendadas. A triagem que proponho para uma sequência correspondente está no [runbook](runbook-triagem.md), com critérios para escalar, encerrar como atividade autorizada ou manter em análise.
+O Elastic recebeu dados históricos por upload manual. Para uma próxima etapa, posso estudar coleta contínua e regras agendadas. 
 
 ## Referências técnicas
 
