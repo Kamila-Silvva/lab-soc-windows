@@ -12,7 +12,7 @@ Minha hipótese era que a correlação encontraria três falhas antes do sucesso
 
 O notebook tem 12 GB de RAM. A VM `Windows-SOC`, com Windows 11 Enterprise Evaluation, recebeu 6 GB e duas CPUs virtuais no VirtualBox. O Kali foi o hospedeiro e cliente SMB. No Windows, trabalhei com o log Security e o canal `Microsoft-Windows-Sysmon/Operational`.
 
-Escolhi exportar os eventos para continuar a análise com a VM desligada. No [diário de decisões](diario-decisoes.md), registrei essa escolha, o bloqueio do script pelo PowerShell e o filtro que deixou o dashboard vazio.
+Escolhi exportar os eventos para continuar a análise com a VM desligada.
 
 Na etapa SMB, usei a rede host-only `vboxnet0`:
 
@@ -123,7 +123,7 @@ Set-Location 'C:\Users\Ka\Lab'
 
 Obtive novamente três falhas/`True` no primeiro arquivo e uma falha/`False` no controle. O script requer Windows com PowerShell 5.1 ou posterior, usa `Get-WinEvent` e apenas lê os EVTX. A conta padrão é `SocLab`; outra pode ser indicada com `-Usuario`.
 
-Na primeira tentativa, a política de execução bloqueou o `.ps1`. O ajuste limitado à sessão está registrado no [diário](diario-decisoes.md#2-o-powershell-bloqueou-a-execução-do-script).
+Na primeira tentativa, a política de execução bloqueou o `.ps1`.
 
 ## Sigma e Elastic
 
